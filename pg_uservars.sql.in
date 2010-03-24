@@ -1,0 +1,17 @@
+
+SET search_path = public;
+
+CREATE OR REPLACE FUNCTION pguser_setvar(text, text)
+RETURNS boolean
+AS 'MODULE_PATHNAME','pguser_setvar'
+LANGUAGE 'C' VOLATILE;
+
+CREATE OR REPLACE FUNCTION pguser_getvar(text)
+RETURNS text
+AS 'MODULE_PATHNAME','pguser_getvar'
+LANGUAGE 'C' VOLATILE;
+
+CREATE OR REPLACE FUNCTION pguser_delvar(text)
+RETURNS boolean
+AS 'MODULE_PATHNAME','pguser_delvar'
+LANGUAGE 'C' VOLATILE;
