@@ -1,0 +1,32 @@
+
+Copyright (c) 2010 Igor Shevchenko <igor.shevchenko@gmail.com>
+
+
+Installation:
+
+# make
+# make install
+
+Installation to db:
+
+psql -f /path/to/pgsql/share/contrib/pg_uservars.sql DBNAME
+
+Usage:
+
+1. Create new variable/value, or change value for an existing variable:
+
+select pguser_setvar('varname', 'some value');
+
+Returns: TRUE
+
+2. Get value:
+
+select pguser_getvar('varname');
+
+Returs: variable's value, "TEXT" type.
+
+3. Remove variable:
+
+select pguser_delvar('varname');
+
+Returns: TRUE
