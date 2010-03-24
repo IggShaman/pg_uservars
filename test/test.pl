@@ -2,6 +2,20 @@
 use strict;
 use warnings;
 
+#
+# Tester script pre-reqs:
+#
+# 1. install pg_uservars extension
+# 2. createdb test1
+# 3. install pg_uservars to "test1" db with e.g.: psql -f pg_uservars.sql test1
+#
+# This script generates 1000 random small keys and unlimited number of values of up to 10kb in size,
+# and does 1m random operations such as: add new key, change value for existing key, remove existing key,
+# remove random key. A local hash with keys and values is maintained and checked in getvar(..).
+#
+# Afterwards, it prints "ps" so one could check memory usage by pgsql backend.
+#
+
 use IO::Handle;
 autoflush STDOUT 1;
 
