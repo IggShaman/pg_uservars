@@ -1,0 +1,3 @@
+*.so
+pg_uservars.sql
+*~
