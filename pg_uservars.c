@@ -33,12 +33,12 @@ extern Datum pguser_delvar(PG_FUNCTION_ARGS);
 static HTAB* ukv_hash = NULL;
 typedef struct {
     const char* key;
-    int32_t len;
+    Size len;
 } ukv_key_t;
 
 typedef struct {
     char* val;
-    int32_t len;
+    Size len;
 } ukv_value_t;
 
 
@@ -46,9 +46,9 @@ typedef struct {
 // hash accessors
 //
 static void ukv_hash_init ( void );
-static ukv_value_t* ukv_hash_get ( const char* key, int32_t len );
-static void ukv_hash_set ( const char* key, int32_t key_len, const char* val, int32_t val_len );
-static void ukv_hash_del ( const char* key, int32_t len );
+static ukv_value_t* ukv_hash_get ( const char* key, Size len );
+static void ukv_hash_set ( const char* key, Size key_len, const char* val, Size val_len );
+static void ukv_hash_del ( const char* key, Size len );
 
 
 #define PG_CSTR_GET_TEXT(cstrp) DatumGetTextP(DirectFunctionCall1(textin, CStringGetDatum(cstrp)))
@@ -70,6 +70,7 @@ Datum pguser_setvar ( PG_FUNCTION_ARGS ) {
     key = PG_TEXT_GET_CSTR(PG_GETARG_TEXT_P(0));
     val = PG_TEXT_GET_CSTR(PG_GETARG_TEXT_P(1));
     
+    //elog ( INFO, "set \"%s\" => \"%s\"", key, val );
     ukv_hash_set ( key, strlen(key), val, strlen(val) );
     
     PG_RETURN_BOOL(true);
@@ -90,6 +91,7 @@ Datum pguser_getvar ( PG_FUNCTION_ARGS ) {
     
     key = PG_TEXT_GET_CSTR(PG_GETARG_TEXT_P(0));
     
+    //elog ( INFO, "get \"%s\"", key );
     val = ukv_hash_get ( key, strlen(key) );
     if ( val )
 	PG_RETURN_TEXT_P(PG_CSTR_GET_TEXT(val->val));
@@ -106,50 +108,60 @@ Datum pguser_delvar ( PG_FUNCTION_ARGS ) {
     
     char* key;
     
-    //char* val;
-    
     if ( PG_ARGISNULL(0) )
     	PG_RETURN_NULL();
     
     key = PG_TEXT_GET_CSTR(PG_GETARG_TEXT_P(0));
-    
-    //val = ukv_hash_get ( key );
-    //if ( val ) {
     ukv_hash_del ( key, strlen(key) );
     PG_RETURN_BOOL(true);
-    //}
-    // no such variable
-    //PG_RETURN_BOOL(false);
 }
 
 
-static ukv_value_t* ukv_hash_get ( const char* name, int32_t name_len ) {
+static ukv_value_t* ukv_hash_get ( const char* name, Size name_len ) {
     
     ukv_key_t key;
+    ukv_value_t* val;
     
     if ( !ukv_hash )
-    	return (NULL);
+    	return NULL;
     
     key.key = name;
     key.len = name_len;
     
-    return (ukv_value_t*)hash_search ( ukv_hash, &key, HASH_FIND, NULL );
+    val = (ukv_value_t*)hash_search ( ukv_hash, &key, HASH_FIND, NULL );
+    //elog ( INFO, "name=\"%s\" size=%lu got value=%lu", name, name_len, (Size)val );
+    return val;
 }
 
 
 static uint32 ukv_key_hash ( const void* key, Size keysize ) {
-    return string_hash ( ((ukv_key_t*)key)->key, ((ukv_key_t*)key)->len );
+    int32_t hv = string_hash ( ((ukv_key_t*)key)->key, ((ukv_key_t*)key)->len );
+    //elog ( INFO, "computing hash for key=\"%s\" size=%d hash=%d", ((ukv_key_t*)key)->key, keysize, hv );
+    return hv;
 }
 
 
 // key comparison function
 static int ukv_key_match ( const void* key1, const void* key2, Size keysize ) {
+    int match;
+    
     Assert ( keysize == sizeof(ukv_key_t) );
     
-    if ( ((ukv_key_t*)key1)->len != ((ukv_key_t*)key2)->len )
-	return false;
+    do {
+	if ( ((ukv_key_t*)key1)->len != ((ukv_key_t*)key2)->len ) {
+	    match = false;
+	    break;
+	}
+	
+	match = (0 == memcmp ( ((ukv_key_t*)key1)->key, ((ukv_key_t*)key2)->key, ((ukv_key_t*)key1)->len ));
+    } while ( false );
     
-    return memcmp ( ((ukv_key_t*)key1)->key, ((ukv_key_t*)key2)->key, ((ukv_key_t*)key1)->len );
+    //elog ( INFO, "\"%s\" match \"%s\" = %s",
+    //((ukv_key_t*)key1)->key,
+    //((ukv_key_t*)key2)->key,
+    //match ? "true" : "false" );
+    
+    return match;
 }
 
 
@@ -169,8 +181,8 @@ static void ukv_hash_init ( void ) {
 }
 
 
-static char* pnstrdup_top ( const char* ptr, int32_t sz ) {
-    char* p2 = MemoryContextAlloc ( TopMemoryContext, sz );
+static char* p_memdup_top ( const void* ptr, Size sz ) {
+    void* p2 = MemoryContextAlloc ( TopMemoryContext, sz );
     if ( !p2 )
 	elog ( ERROR, "out of memory" );
     
@@ -179,11 +191,13 @@ static char* pnstrdup_top ( const char* ptr, int32_t sz ) {
 }
 
 
-static void ukv_hash_set ( const char* name, int32_t name_len, const char* new_val, int32_t new_val_len ) {
+static void ukv_hash_set ( const char* name, Size name_len, const char* new_val, Size new_val_len ) {
     
     ukv_key_t key;
     ukv_value_t* val;
     bool found;
+    
+    //elog ( INFO, "setting variable name=\"%s\" size=%d value=\"%s\" size=%d", name, name_len, new_val, new_val_len );
     
     if ( !ukv_hash )
 	ukv_hash_init();
@@ -203,11 +217,12 @@ static void ukv_hash_set ( const char* name, int32_t name_len, const char* new_v
 	//ereport(ERROR, (errcode(ERRCODE_DUPLICATE_OBJECT), errmsg("duplicate string name")));
     }
     
-    val->val = pnstrdup_top ( new_val, new_val_len );
+    val->val = p_memdup_top ( new_val, new_val_len );
+    //elog ( INFO, "value set to \"%s\"", val->val );
 }
 
 
-static void ukv_hash_del ( const char* name, int32_t name_len ) {
+static void ukv_hash_del ( const char* name, Size name_len ) {
     
     ukv_key_t key;
     ukv_value_t* val;
@@ -221,9 +236,6 @@ static void ukv_hash_del ( const char* name, int32_t name_len ) {
     
     val = (ukv_value_t*)hash_search ( ukv_hash, &key, HASH_REMOVE, &found );
     
-    if ( !val )
-    	ereport ( ERROR, (errcode(ERRCODE_UNDEFINED_OBJECT), errmsg("undefined string name")) );
-    
-    if ( val->val )
+    if ( val )
     	pfree ( val->val );
 }
